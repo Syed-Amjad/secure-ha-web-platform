@@ -1,0 +1,60 @@
+# {{ ansible_managed }}
+# Two zones: generous for browsing, strict for authentication endpoints.
+limit_req_zone  $binary_remote_addr zone=general:10m rate={{ rate_general }};
+limit_req_zone  $binary_remote_addr zone=login:10m   rate={{ rate_login }};
+limit_conn_zone $binary_remote_addr zone=perip:10m;
+
+# Trust Cloudflare's client-IP header, but ONLY when the connection itself comes
+# from a Cloudflare range. Without the source restriction, anyone reaching the
+# origin directly could forge CF-Connecting-IP and evade every per-IP control.
+{% for cidr in cloudflare_ipv4_ranges %}
+set_real_ip_from {{ cidr }};
+{% endfor %}
+# The ALB sits between Cloudflare and here, so also trust the VPC hop.
+set_real_ip_from {{ vpc_cidr }};
+real_ip_header   CF-Connecting-IP;
+
+server {
+    listen {{ nginx_listen_port }};
+    server_name _;
+
+    access_log /var/log/nginx/{{ app_name }}.access.log;
+    error_log  /var/log/nginx/{{ app_name }}.error.log warn;
+
+    # Health check — must NOT be rate limited.
+    #
+    # The ALB probes this every 15 seconds from a node in each AZ. Rate limit it
+    # and you will eventually deregister your own healthy targets, then spend an
+    # afternoon wondering why the load balancer thinks the app is down.
+    location = /healthz {
+        access_log off;
+        add_header Content-Type application/json;
+        return 200 '{"status":"ok"}';
+    }
+
+    location /login {
+        limit_req        zone=login burst={{ burst_login }} nodelay;
+        limit_req_status 429;
+        proxy_pass       http://127.0.0.1:{{ app_port }};
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        limit_req        zone=general burst={{ burst_general }} nodelay;
+        limit_req_status 429;
+        limit_conn       perip {{ conn_per_ip }};
+        proxy_pass       http://127.0.0.1:{{ app_port }};
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    add_header X-Content-Type-Options nosniff     always;
+    add_header X-Frame-Options        DENY        always;
+    add_header Referrer-Policy        no-referrer always;
+    server_tokens off;
+}

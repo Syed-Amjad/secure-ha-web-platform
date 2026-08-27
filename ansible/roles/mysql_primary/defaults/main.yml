@@ -1,0 +1,8 @@
+---
+# Override at run time — never commit real values:
+#   ansible-playbook site.yml -e "repl_password=... app_db_password=..."
+repl_password: "CHANGE_ME"
+app_db_password: "CHANGE_ME"
+
+mysql_server_id: 1
+binlog_retention_seconds: 604800 # 7 days

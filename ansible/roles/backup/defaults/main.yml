@@ -1,0 +1,10 @@
+---
+# backup_bucket and kms_key_id are injected from Terraform outputs by
+# scripts/gen-inventory.sh. Fail loudly rather than silently backing up nowhere.
+backup_bucket: ""
+kms_key_id: ""
+
+# 02:30 UTC daily. Randomised delay so a fleet of nodes does not all start
+# dumping at the same second.
+backup_oncalendar: "*-*-* 02:30:00"
+backup_randomized_delay_sec: 900

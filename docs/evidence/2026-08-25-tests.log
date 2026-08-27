@@ -1,0 +1,12 @@
+=== 2026-08-25T07:14:11Z  test 1: replication (post-reboot)
+           Replica_IO_Running: Yes
+          Replica_SQL_Running: Yes
+                   Last_Error: 
+        Seconds_Behind_Source: 0
+    Replica_SQL_Running_State: Replica has read all relay log; waiting for more updates
+
+=== test 2: WAF injection block
+sqli: 403
+
+=== test 3: login rate limit
+200 200 200 200 200 200 200 200 200 200 200 200 429 429 429 429 429 429 429 429 429 429 429 429 429 429 429 429 429 429 

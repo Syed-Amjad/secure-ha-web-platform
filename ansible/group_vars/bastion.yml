@@ -1,0 +1,11 @@
+---
+# The bastion is the ONE host whose SSH port faces the internet, so its firewall
+# rule is the only one keyed to your personal address.
+#
+# Every other host allows SSH from the VPC (see roles/common_hardening/defaults),
+# because their SSH connections arrive from the bastion's PRIVATE address after
+# ProxyJump — not from admin_cidr. Applying the admin_cidr rule to private hosts
+# would lock Ansible out on the second run, which is a genuinely unpleasant way
+# to discover the difference.
+ssh_allowed_sources:
+  - "{{ admin_cidr }}"

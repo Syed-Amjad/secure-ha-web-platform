@@ -1,0 +1,16 @@
+---
+# Non-secret defaults shared by every host.
+#
+# admin_cidr, vpc_cidr, db_primary_private_ip, backup_bucket and kms_key_id are
+# injected by scripts/gen-inventory.sh from Terraform outputs. Do not duplicate
+# them here — two sources of truth for an IP address always drift.
+#
+# Cloudflare ranges live in cloudflare.yml, in this same directory, because a
+# script regenerates that file.
+
+app_name: webapp
+app_port: 3000
+nginx_listen_port: 8080
+
+app_db_name: appdb
+app_db_user: appuser

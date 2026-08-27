@@ -1,0 +1,103 @@
+---
+- name: Fail early if the backup destination was not supplied
+  ansible.builtin.assert:
+    that:
+      - backup_bucket | length > 0
+      - kms_key_id | length > 0
+    fail_msg: >-
+      backup_bucket and kms_key_id are empty. Run ../scripts/gen-inventory.sh so
+      they are read from Terraform outputs. A backup job pointed at nowhere is
+      worse than no backup job, because it looks like it is working.
+
+- name: Install backup prerequisites
+  ansible.builtin.apt:
+    name:
+      - unzip
+      - curl
+      - gzip
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check for the AWS CLI
+  ansible.builtin.command: aws --version
+  register: aws_cli_check
+  changed_when: false
+  failed_when: false
+
+# Installed from the official archive rather than apt so the version is v2 and
+# predictable. Distribution packages lag and occasionally ship v1, whose
+# --sse-kms-key-id behaviour differs.
+- name: Install AWS CLI v2
+  when: aws_cli_check.rc != 0
+  block:
+    - name: Download the AWS CLI installer
+      ansible.builtin.get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
+        mode: "0644"
+
+    - name: Unpack the installer
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+
+    - name: Run the installer
+      ansible.builtin.command: /tmp/aws/install
+      args:
+        creates: /usr/local/bin/aws
+
+    - name: Remove installer artefacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/awscliv2.zip
+        - /tmp/aws
+
+- name: Install the backup script
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/backup-mysql.sh"
+    dest: /usr/local/bin/backup-mysql.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+# Root-owned and root-only. It names the bucket and the KMS key — not secrets in
+# themselves, but there is no reason for any other account to read them.
+- name: Deploy the backup environment file
+  ansible.builtin.template:
+    src: backup.env.j2
+    dest: /etc/backup.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Deploy the backup service unit
+  ansible.builtin.template:
+    src: mysql-backup.service.j2
+    dest: /etc/systemd/system/mysql-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload systemd
+
+- name: Deploy the backup timer unit
+  ansible.builtin.template:
+    src: mysql-backup.timer.j2
+    dest: /etc/systemd/system/mysql-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload systemd
+
+- name: Apply unit changes before enabling
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the backup timer
+  ansible.builtin.systemd:
+    name: mysql-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true

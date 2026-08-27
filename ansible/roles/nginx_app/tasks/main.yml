@@ -1,0 +1,106 @@
+---
+- name: Install nginx and the application runtime
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - python3
+      - python3-pymysql # from apt, so no pip and no virtualenv needed
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create application user
+  ansible.builtin.user:
+    name: "{{ app_name }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "/opt/{{ app_name }}"
+    create_home: true
+
+# `copy`, not `template` — the app's inline CSS uses braces, which would collide
+# with Jinja's {{ }} delimiters. Everything configurable comes from the
+# environment file instead.
+- name: Deploy the application
+  ansible.builtin.copy:
+    src: app.py
+    dest: "/opt/{{ app_name }}/app.py"
+    owner: "{{ app_name }}"
+    group: "{{ app_name }}"
+    mode: "0755"
+  notify: restart webapp
+
+# Credentials go in a root-owned environment file read by systemd, not into the
+# unit file (visible to every user via `systemctl cat`) and not into the source.
+- name: Deploy application environment file
+  ansible.builtin.template:
+    src: webapp.env.j2
+    dest: "/etc/{{ app_name }}.env"
+    owner: root
+    group: "{{ app_name }}"
+    mode: "0640"
+  notify: restart webapp
+
+- name: Deploy systemd unit
+  ansible.builtin.template:
+    src: webapp.service.j2
+    dest: "/etc/systemd/system/{{ app_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart webapp
+
+- name: Enable and start the application
+  ansible.builtin.systemd:
+    name: "{{ app_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Deploy nginx site configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/sites-available/{{ app_name }}
+    owner: root
+    group: root
+    mode: "0644"
+  # No `validate:` here on purpose. `nginx -t` parses the MAIN config and its
+  # includes, so pointing it at a temp file in isolation validates nothing
+  # useful (the temp file is not yet included, and a bare server block is not a
+  # valid standalone config). Validation happens in the reload handler instead,
+  # which runs `nginx -t` against the real assembled config before reloading.
+  notify: reload nginx
+
+- name: Enable the site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/{{ app_name }}
+    dest: /etc/nginx/sites-enabled/{{ app_name }}
+    state: link
+  notify: reload nginx
+
+- name: Remove the default site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+
+- name: Enable and start nginx
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: true
+    state: started
+
+# The fail2ban nginx-limit-req filter ships with Debian/Ubuntu's fail2ban
+# package, but confirm it exists rather than discovering a silently dead jail.
+- name: Confirm the nginx-limit-req filter is present
+  ansible.builtin.stat:
+    path: /etc/fail2ban/filter.d/nginx-limit-req.conf
+  register: limit_req_filter
+
+- name: Fail loudly if the nginx-limit-req filter is missing
+  ansible.builtin.fail:
+    msg: >-
+      /etc/fail2ban/filter.d/nginx-limit-req.conf is missing, so the jail
+      configured in common_hardening would load but never match anything.
+  when: not limit_req_filter.stat.exists

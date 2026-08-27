@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+[Unit]
+Description=MySQL logical backup to S3
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/backup.env
+ExecStart=/usr/local/bin/backup-mysql.sh
+
+# mysqldump reads through the local socket as root, so no password is stored
+# anywhere. Requires root to have auth_socket, which is Ubuntu's default.
+User=root
+
+# A failed backup must be visible. Without this the unit fails quietly and the
+# first you hear of it is when you need the backup.
+StandardOutput=journal
+StandardError=journal

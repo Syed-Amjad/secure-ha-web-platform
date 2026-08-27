@@ -1,0 +1,40 @@
+---
+# Run order matters. The database must exist and be replicating before the web
+# tier tries to connect, and hardening runs first so every host is default-deny
+# before anything listens on a port.
+#
+#   ansible-galaxy collection install -r requirements.yml
+#   ../scripts/gen-inventory.sh
+#   ansible-playbook site.yml
+#
+# Secrets are NOT stored in this repo. Provide them at run time:
+#   ansible-playbook site.yml \
+#     -e "mysql_root_password=... repl_password=... app_db_password=..."
+# or, better, with ansible-vault:
+#   ansible-vault create group_vars/all/vault.yml
+#   ansible-playbook site.yml --ask-vault-pass
+
+- name: Baseline hardening on every host
+  hosts: all
+  become: true
+  roles:
+    - common_hardening
+
+- name: Database primary
+  hosts: db_primary
+  become: true
+  roles:
+    - mysql_primary
+    - backup
+
+- name: Database replica
+  hosts: db_replica
+  become: true
+  roles:
+    - mysql_replica
+
+- name: Application tier
+  hosts: web
+  become: true
+  roles:
+    - nginx_app

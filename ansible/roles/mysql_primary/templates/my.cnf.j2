@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+[mysqld]
+server_id                  = {{ mysql_server_id }}
+log_bin                    = /var/log/mysql/mysql-bin.log
+binlog_format              = ROW
+binlog_expire_logs_seconds = {{ binlog_retention_seconds }}
+
+# GTID. Position-based replication is legacy: it forces you to record a binlog
+# file and offset, and gets those wrong precisely when you are failing over
+# under pressure. GTIDs make the replica ask for "everything I have not seen",
+# which is what makes SOURCE_AUTO_POSITION = 1 possible.
+gtid_mode                = ON
+enforce_gtid_consistency = ON
+
+# Durability. Together these mean a committed transaction survives an OS crash
+# or a power loss. They cost write throughput, and that trade is the right one
+# for a database you claim is highly available.
+sync_binlog                    = 1
+innodb_flush_log_at_trx_commit = 1
+
+# Reject any non-TLS TCP connection. Unix socket connections are exempt, which
+# is why Ansible can still manage this over the socket.
+require_secure_transport = ON
+
+# Listen on the private address. The security group is what restricts who may
+# reach it — this only has to be wider than loopback.
+bind_address = 0.0.0.0

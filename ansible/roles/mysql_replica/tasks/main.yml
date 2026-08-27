@@ -1,0 +1,120 @@
+---
+- name: Install MySQL server
+  ansible.builtin.apt:
+    name:
+      - mysql-server
+      - python3-pymysql
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Deploy replica configuration
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/zz-ha.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mysql
+
+- name: Apply configuration before continuing
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure MySQL is running
+  ansible.builtin.systemd:
+    name: mysql
+    enabled: true
+    state: started
+
+# Same reasoning as the primary: clear the anonymous pre-GTID transactions that
+# Ubuntu's package installation created, so the GTID set starts empty and
+# SOURCE_AUTO_POSITION = 1 can ask for everything from the beginning.
+- name: Check whether GTID history has already been reset
+  ansible.builtin.stat:
+    path: /var/lib/mysql/.gtid_reset_done
+  register: gtid_reset_marker
+
+- name: Reset binary logs and GTIDs on first configuration
+  when: not gtid_reset_marker.stat.exists
+  block:
+    - name: Stop replication before resetting
+      community.mysql.mysql_replication:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        mode: stopreplica
+      failed_when: false
+
+    - name: Reset binary logs and GTIDs (MySQL 8.0.22+)
+      community.mysql.mysql_query:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        query: RESET BINARY LOGS AND GTIDS
+      register: reset_new
+      failed_when: false
+
+    - name: Reset master (older MySQL 8.0 syntax)
+      community.mysql.mysql_query:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        query: RESET MASTER
+      when: reset_new.failed | default(false) or reset_new.rc | default(0) != 0
+
+    - name: Record that the reset has happened
+      ansible.builtin.file:
+        path: /var/lib/mysql/.gtid_reset_done
+        state: touch
+        owner: mysql
+        group: mysql
+        mode: "0600"
+
+# ---------------------------------------------------------------------------
+# Point the replica at the primary.
+#
+# primary_auto_position: true is the GTID payoff — no binlog filename, no
+# offset, nothing to note down and get wrong during a failover.
+# ---------------------------------------------------------------------------
+# MySQL rejects CHANGE REPLICATION SOURCE TO while the replication threads are
+# running. The stopreplica above cannot serve that purpose — it sits inside the
+# `not gtid_reset_marker.stat.exists` block, so it runs on the first pass only.
+# Every later run reached changeprimary with replication live and failed, with
+# the message hidden behind the no_log below. Stopping unconditionally here is
+# what makes this role re-runnable.
+- name: Stop replication before reconfiguring the source
+  community.mysql.mysql_replication:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    mode: stopreplica
+  failed_when: false
+
+- name: Configure replication source
+  community.mysql.mysql_replication:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    mode: changeprimary
+    primary_host: "{{ db_primary_private_ip }}"
+    primary_user: repl
+    primary_password: "{{ repl_password }}"
+    primary_auto_position: true
+    primary_ssl: true
+  no_log: true
+
+- name: Start replication
+  community.mysql.mysql_replication:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    mode: startreplica
+
+- name: Read replica status
+  community.mysql.mysql_replication:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    mode: getreplica
+  register: replica_status
+
+# Do not accept "the playbook finished" as evidence that replication works.
+# Check the four fields that actually matter, and fail the run if they are wrong.
+- name: Assert replication is healthy
+  ansible.builtin.assert:
+    that:
+      - replica_status.Replica_IO_Running | default(replica_status.Slave_IO_Running | default('No')) == 'Yes'
+      - replica_status.Replica_SQL_Running | default(replica_status.Slave_SQL_Running | default('No')) == 'Yes'
+      - (replica_status.Last_Error | default('')) == ''
+    fail_msg: >-
+      Replication is not healthy. Run `SHOW REPLICA STATUS\G` on the replica and
+      read Last_IO_Error / Last_SQL_Error. The usual causes are the db security
+      group not permitting self-referenced 3306, a wrong repl password, or the
+      primary's GTID reset not having run before the replica connected.
+    success_msg: "Replication running: IO and SQL threads both Yes, no errors."

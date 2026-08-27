@@ -1,0 +1,10 @@
+---
+# Override at run time:
+#   ansible-playbook site.yml -e "app_db_password=..."
+app_db_password: "CHANGE_ME"
+
+rate_general: "30r/s"
+rate_login: "5r/m"
+burst_general: 60
+burst_login: 5
+conn_per_ip: 20

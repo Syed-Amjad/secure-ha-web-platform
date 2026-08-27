@@ -1,0 +1,27 @@
+# {{ ansible_managed }}
+[mysqld]
+server_id                = {{ mysql_server_id }}
+gtid_mode                = ON
+enforce_gtid_consistency = ON
+
+# read_only alone still lets any account with SUPER write — which is exactly how
+# split-brain happens when someone connects as root to "just fix one row" on the
+# replica. super_read_only closes that.
+read_only       = ON
+super_read_only = ON
+
+relay_log          = /var/log/mysql/relay-bin.log
+relay_log_recovery = ON
+
+# Keep binlogs on the replica too, so it can become a primary that has its own
+# replica after promotion. Without this, promoting leaves you with no HA at all.
+log_bin                    = /var/log/mysql/mysql-bin.log
+binlog_format              = ROW
+binlog_expire_logs_seconds = {{ binlog_retention_seconds }}
+log_replica_updates        = ON
+
+sync_binlog                    = 1
+innodb_flush_log_at_trx_commit = 1
+
+require_secure_transport = ON
+bind_address             = 0.0.0.0

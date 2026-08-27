@@ -1,0 +1,42 @@
+# DO NOT EDIT inventory.ini BY HAND — it is generated.
+#
+#   ../scripts/gen-inventory.sh
+#
+# This example only shows the shape so you can recognise a broken generation.
+# The real file is gitignored: it contains addresses.
+
+[web]
+10.20.10.11
+10.20.11.12
+
+[db_primary]
+10.20.10.21
+
+[db_replica]
+10.20.11.22
+
+[bastion]
+54.x.x.x
+
+[all:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/ha-lab.pem
+db_primary_private_ip=10.20.10.21
+vpc_cidr=10.20.0.0/16
+admin_cidr=203.0.113.7/32
+backup_bucket=ha-web-platform-db-backups-123456789012
+kms_key_id=arn:aws:kms:us-east-1:123456789012:key/...
+
+# Private nodes are reached with ProxyJump (-J) through the bastion.
+# Nothing below the bastion has a public address.
+[web:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new -J ubuntu@54.x.x.x'
+
+[db_primary:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new -J ubuntu@54.x.x.x'
+
+[db_replica:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new -J ubuntu@54.x.x.x'
+
+[bastion:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new'

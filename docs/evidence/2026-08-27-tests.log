@@ -1,0 +1,57 @@
+[2026-08-27T12:03:11Z] Latest backup: mysql-20260827T072435Z.sql.gz
+Completed 256.0 KiB/273.3 KiB (170.7 KiB/s) with 1 file(s) remainingCompleted 273.3 KiB/273.3 KiB (181.8 KiB/s) with 1 file(s) remainingdownload: s3://ha-web-platform-db-backups-965096109714/logical/mysql-20260827T072435Z.sql.gz to ../../../../tmp/tmp.Og1T4sPgWe/mysql-20260827T072435Z.sql.gz
+Completed 96 Bytes/96 Bytes (122 Bytes/s) with 1 file(s) remainingdownload: s3://ha-web-platform-db-backups-965096109714/logical/mysql-20260827T072435Z.sql.gz.sha256 to ../../../../tmp/tmp.Og1T4sPgWe/mysql-20260827T072435Z.sql.gz.sha256
+[2026-08-27T12:03:17Z] Verifying checksum
+mysql-20260827T072435Z.sql.gz: OK
+[2026-08-27T12:03:17Z] Starting scratch MySQL instance
+[2026-08-27T12:03:27Z] Clearing GTID state on the scratch instance
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password: YES)
+==> Baseline — 10 requests
+200 200 200 200 200 200 200 200 200 200 
+==> Starting continuous probe (1/s)
+==> Stopping i-0befb513b32f48ef9
+==> Observing for 120s
+
+=== Failover drill result ===
+Instance stopped at : 12:04:12 UTC
+Total probes        : 69
+Failed (non-200)    : 7
+Availability        : 89.86%
+
+Non-200 responses:
+12:04:11 000
+12:04:14 502
+12:04:18 502
+12:04:24 000
+12:04:29 000
+12:04:32 000
+12:04:39 000
+
+Full probe log: docs/evidence/drill-web1.log
+Record the numbers in docs/DR-test-results.md, then restart the node:
+  aws ec2 start-instances --instance-ids i-0befb513b32f48ef9
+==> Baseline — 10 requests
+200 200 200 200 200 200 200 200 200 200 
+==> Starting continuous probe (1/s)
+==> Stopping i-07ac8b767309b70ce
+==> Observing for 120s
+
+=== Failover drill result ===
+Instance stopped at : 12:09:08 UTC
+Total probes        : 68
+Failed (non-200)    : 7
+Availability        : 89.71%
+
+Non-200 responses:
+12:09:09 502
+12:09:13 502
+12:09:18 000
+12:09:23 000
+12:09:28 000
+12:09:31 000
+12:09:36 000
+
+Full probe log: docs/evidence/drill-web2.log
+Record the numbers in docs/DR-test-results.md, then restart the node:
+  aws ec2 start-instances --instance-ids i-07ac8b767309b70ce

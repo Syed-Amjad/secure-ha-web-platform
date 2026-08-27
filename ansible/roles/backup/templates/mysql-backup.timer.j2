@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Nightly MySQL backup
+
+[Timer]
+OnCalendar={{ backup_oncalendar }}
+RandomizedDelaySec={{ backup_randomized_delay_sec }}
+
+# If the host was stopped overnight — which it will be, see section 0.4 — run
+# the missed backup on the next boot rather than skipping the day silently.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,34 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart webapp
+  ansible.builtin.systemd:
+    name: "{{ app_name }}"
+    state: restarted
+
+# Test before reloading. A reload with a broken config leaves the OLD config
+# running, but `systemctl restart` with a broken config leaves you with nothing
+# listening — and this host has no public IP to debug from.
+#
+# These two are `listen: reload nginx` rather than a `block:` under that name.
+# Handlers do not support blocks — the block's name is never registered, so
+# `notify: reload nginx` aborts the run with "handler not found". Handlers
+# sharing a listen topic fire in the order written here, so validation still
+# gates the reload.
+- name: Validate nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  register: nginx_config_check
+  listen: reload nginx
+
+# The `when` is deliberate belt-and-braces: ansible.cfg sets force_handlers,
+# which keeps handlers running past a failure, so without this guard a broken
+# config could still be reloaded.
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: nginx_config_check is succeeded
+  listen: reload nginx

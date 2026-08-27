@@ -1,0 +1,12 @@
+---
+# Where SSH may originate FROM, per host.
+#
+# Default is the VPC, because private nodes receive their SSH connection from
+# the bastion's private address after ProxyJump. group_vars/bastion.yml overrides
+# this to admin_cidr for the jump host itself.
+ssh_allowed_sources:
+  - "{{ vpc_cidr }}"
+
+fail2ban_bantime: 3600
+fail2ban_findtime: 600
+fail2ban_maxretry: 4

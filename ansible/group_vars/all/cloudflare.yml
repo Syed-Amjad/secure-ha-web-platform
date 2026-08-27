@@ -1,0 +1,32 @@
+---
+# Cloudflare edge IPv4 ranges.
+#
+# nginx uses these with set_real_ip_from so $remote_addr becomes the real client
+# address rather than Cloudflare's. Without it, per-IP rate limiting and fail2ban
+# would see every request as coming from a handful of Cloudflare addresses — and
+# would therefore either ban the entire edge or nothing at all.
+#
+# The same list is the ALB security group's ingress allowlist in Terraform.
+# Regenerate BOTH from one fetch:
+#
+#   ./scripts/update-cloudflare-ranges.sh
+#
+# Cloudflare does change these. A stale list shows up as "some visitors get a
+# connection timeout", not as an obvious error, so refresh before each rebuild.
+
+cloudflare_ipv4_ranges:
+  - 173.245.48.0/20
+  - 103.21.244.0/22
+  - 103.22.200.0/22
+  - 103.31.4.0/22
+  - 141.101.64.0/18
+  - 108.162.192.0/18
+  - 190.93.240.0/20
+  - 188.114.96.0/20
+  - 197.234.240.0/22
+  - 198.41.128.0/17
+  - 162.158.0.0/15
+  - 104.16.0.0/13
+  - 104.24.0.0/14
+  - 172.64.0.0/13
+  - 131.0.72.0/22

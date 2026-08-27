@@ -1,0 +1,29 @@
+[DEFAULT]
+bantime  = {{ fail2ban_bantime }}
+findtime = {{ fail2ban_findtime }}
+maxretry = {{ fail2ban_maxretry }}
+backend  = systemd
+
+# Never ban yourself or the bastion. Locking yourself out of a private node
+# means rebuilding it — there is no console to fall back to.
+ignoreip = 127.0.0.1/8 {{ admin_cidr }} {{ vpc_cidr }}
+
+[sshd]
+enabled  = true
+port     = ssh
+backend  = systemd
+
+{% if 'web' in group_names %}
+# The jail most people miss: it bans clients that repeatedly trip nginx's own
+# rate limiter, so rate limiting ESCALATES into blocking instead of returning
+# 503 forever to an attacker who does not care.
+[nginx-limit-req]
+enabled  = true
+filter   = nginx-limit-req
+port     = http,https
+logpath  = /var/log/nginx/error.log
+backend  = auto
+maxretry = 10
+findtime = 60
+bantime  = 1800
+{% endif %}

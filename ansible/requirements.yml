@@ -1,0 +1,10 @@
+# Install before the first run:
+#   ansible-galaxy collection install -r requirements.yml
+---
+collections:
+  - name: ansible.posix # firewalld, sysctl, authorized_key
+    version: ">=1.5.4"
+  - name: community.mysql # mysql_user, mysql_db, mysql_replication
+    version: ">=3.9.0"
+  - name: community.general
+    version: ">=8.0.0"

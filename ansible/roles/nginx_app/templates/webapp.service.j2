@@ -1,0 +1,33 @@
+# {{ ansible_managed }}
+[Unit]
+Description={{ app_name }} demo application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ app_name }}
+Group={{ app_name }}
+EnvironmentFile=/etc/{{ app_name }}.env
+ExecStart=/usr/bin/python3 /opt/{{ app_name }}/app.py
+Restart=always
+RestartSec=3
+
+# Hardening. The app listens on loopback only and needs nothing else — so take
+# everything else away. If it is ever exploited, this is what limits the damage.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

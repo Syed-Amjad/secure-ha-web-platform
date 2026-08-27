@@ -1,0 +1,5 @@
+---
+repl_password: "CHANGE_ME"
+
+mysql_server_id: 2
+binlog_retention_seconds: 604800

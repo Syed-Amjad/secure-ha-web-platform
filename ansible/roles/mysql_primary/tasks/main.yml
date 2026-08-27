@@ -1,0 +1,124 @@
+---
+- name: Install MySQL server
+  ansible.builtin.apt:
+    name:
+      - mysql-server
+      - python3-pymysql # required by the community.mysql modules
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Deploy primary configuration
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/mysql/mysql.conf.d/zz-ha.cnf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mysql
+
+- name: Apply configuration before continuing
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure MySQL is running
+  ansible.builtin.systemd:
+    name: mysql
+    enabled: true
+    state: started
+
+# ---------------------------------------------------------------------------
+# Clear the pre-GTID history, ONCE.
+#
+# Ubuntu starts mysqld during package installation, with binary logging on but
+# GTID off. Those first transactions are "anonymous" — they carry no GTID. A
+# replica using SOURCE_AUTO_POSITION = 1 cannot replay them, and you get the
+# confusing error 1236 about purged binary logs on what is obviously a brand
+# new server.
+#
+# Wiping the binlogs before creating any real data means everything the replica
+# ever needs to see has a GTID. Safe here because this is a fresh primary; on a
+# server with data you would instead seed the replica from a mysqldump taken
+# with --set-gtid-purged=ON, which is exactly what scripts/backup-mysql.sh does.
+# ---------------------------------------------------------------------------
+- name: Check whether GTID history has already been reset
+  ansible.builtin.stat:
+    path: /var/lib/mysql/.gtid_reset_done
+  register: gtid_reset_marker
+
+- name: Reset binary logs and GTIDs on first configuration
+  when: not gtid_reset_marker.stat.exists
+  block:
+    - name: Reset binary logs and GTIDs (MySQL 8.0.22+)
+      community.mysql.mysql_query:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        query: RESET BINARY LOGS AND GTIDS
+      register: reset_new
+      failed_when: false
+
+    - name: Reset master (older MySQL 8.0 syntax)
+      community.mysql.mysql_query:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        query: RESET MASTER
+      when: reset_new.failed | default(false) or reset_new.rc | default(0) != 0
+
+    - name: Record that the reset has happened
+      ansible.builtin.file:
+        path: /var/lib/mysql/.gtid_reset_done
+        state: touch
+        owner: mysql
+        group: mysql
+        mode: "0600"
+
+# ---------------------------------------------------------------------------
+# Replication account
+# ---------------------------------------------------------------------------
+- name: Create the replication user
+  community.mysql.mysql_user:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    name: repl
+    host: "%"
+    password: "{{ repl_password }}"
+    priv: "*.*:REPLICATION SLAVE"
+    tls_requires:
+      SSL:
+    state: present
+  no_log: true
+
+# ---------------------------------------------------------------------------
+# Application schema. Created AFTER the GTID reset so every statement here has
+# a GTID and therefore replicates cleanly.
+# ---------------------------------------------------------------------------
+- name: Create the application database
+  community.mysql.mysql_db:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    name: "{{ app_db_name }}"
+    state: present
+
+- name: Create the visits table
+  community.mysql.mysql_query:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    login_db: "{{ app_db_name }}"
+    query: >-
+      CREATE TABLE IF NOT EXISTS visits (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        node VARCHAR(64) NOT NULL,
+        seen_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_seen_at (seen_at)
+      ) ENGINE=InnoDB
+
+- name: Seed one row so a restore has something to verify
+  community.mysql.mysql_query:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    login_db: "{{ app_db_name }}"
+    query: INSERT INTO visits (node) SELECT 'seed' FROM DUAL
+      WHERE NOT EXISTS (SELECT 1 FROM visits WHERE node = 'seed')
+
+- name: Create the application user
+  community.mysql.mysql_user:
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    name: "{{ app_db_user }}"
+    host: "%"
+    password: "{{ app_db_password }}"
+    priv: "{{ app_db_name }}.*:SELECT,INSERT,UPDATE,DELETE"
+    state: present
+  no_log: true
