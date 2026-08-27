@@ -246,4 +246,3 @@ evidence than any of the scripted drills.
 - WAF coverage and rate limiting are constrained by the Cloudflare Free plan, as
   detailed above.
 - Database failover is manual and has not yet been drilled (row 3 above).
-

@@ -45,4 +45,3 @@ group_vars/all/vault.yml
 /tmp/
 .DS_Store
 Thumbs.db
-
